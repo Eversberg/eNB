@@ -19,6 +19,7 @@ from threading import Thread
 import datetime
 
 import eNAS, eMENU
+from helpers import helper_print_pco, nas_pco, do_tun_ss
 
 
 #tries to import all options for retrieving IMSI, and RES, CK and IK from USIM.
@@ -43,7 +44,19 @@ except:
     pass
     
 
+def write_gtp_wrap(dic, dic_t, x):
+    os.write(dic_t,x)
+    locaddr = '.'.join(f'{c}' for c in dic['ENB-GTP-ADDRESS-INT'].to_bytes(4, 'big') )
+    gtpua = '.'.join(f'{c}' for c in dic['SGW-GTP-ADDRESS'][-1])
+    lteid = int.from_bytes(dic['SGW-TEID'][-1], "big") # ok : be -> int
 
+    assert lteid.to_bytes(4, 'big') == dic['SGW-TEID'][-1]
+    dic_r = eMENU.print_log(dic, f"{dic['GTP-U']} {locaddr} {gtpua} {dic['PDN-ADDRESS-IPV4']} {lteid} -> {dic['SGW-TEID'][-1]}")
+    #{sys._getframe().f_lineno}  {sys._getframe().f_code.co_filename}
+    # with open("gtpwr", "a") as fh:
+    #     fh.write(str(x)+"\n")
+    dic = do_tun_ss(dic)
+    return dic_r
 
 
 PLMN = '12345'
@@ -685,7 +698,7 @@ def Reset(dic):
 ###############
 #   NAS Msg   #
 ###############
-def nas_pco(pdp_type,pcscf_restoration):
+def _nas_pco(pdp_type,pcscf_restoration):
 
     if pdp_type == 1:
         len_pco = struct.pack("!H", 32)
@@ -828,7 +841,7 @@ def nas_attach_request(type, esm_information_transfer_flag, eps_identity, pdp_ty
     if attach_type == 6: #EPS Emergency Attach
         emm_list.append((0,'LV-E',nas_pdn_connectivity(0,1,pdp_type,None,pco,esm_information_transfer_flag,4)))    
     else:
-        emm_list.append((0,'LV-E',nas_pdn_connectivity(0,1,pdp_type,None,pco,esm_information_transfer_flag, pdn_request_type)))
+        emm_list.append((0,'LV-E',nas_pdn_connectivity(0,1,pdp_type,None,pco,True, pdn_request_type)))
     
     if type[0] == "4G":
         if attach_type == 2 and lai != None:
@@ -1125,7 +1138,7 @@ def ProcessUplinkNAS(message_type, dic):
         if dic['ATTACH-TYPE'] == 6: #If Attach Type = EPS Emergency PDN Connectity is with Emergency APN 
             dic['NAS-ENC'] = nas_pdn_connectivity(0, 1, dic['PDP-TYPE'],None, pco, None,4)        
         else:
-            dic['NAS-ENC'] = nas_pdn_connectivity(0, 1, dic['PDP-TYPE'],eNAS.encode_apn(dic['APN']), pco, None, dic['PDN-CONNECTIVITY-REQUEST-TYPE'])
+            dic['NAS-ENC'] = nas_pdn_connectivity(0, 1, dic['PDP-TYPE'],eNAS.encode_apn(dic['APN']), pco, True, dic['PDN-CONNECTIVITY-REQUEST-TYPE'])
         dic['UP-COUNT'] += 1 
         dic['DIR'] = 0
         nas_encrypted = nas_encrypt(dic)
@@ -1318,6 +1331,8 @@ def ProcessDownlinkNAS(dic):
             if i[0] == 'esm message container':
                 
                 for m in i[1]:
+                    if m[0] == 'protocol configuration options':
+                        helper_print_pco(m[1])
       
                     if m[0] == 'eps bearer identity':
                         if m[1] not in dic['EPS-BEARER-IDENTITY']:
@@ -1394,8 +1409,8 @@ def ProcessDownlinkNAS(dic):
     elif message_type == 69: #detach request
     
         if len(dic['SGW-GTP-ADDRESS']) > 0:
-            os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-            os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
+            dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+            dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
             dic = eMENU.print_log(dic, "GTP-U: Deactivation due to DetachRequest received")
         
         dic['RAB-ID'] = []
@@ -1423,8 +1438,8 @@ def ProcessDownlinkNAS(dic):
     elif message_type == 70: #detach accept
     
         if len(dic['SGW-GTP-ADDRESS']) > 0:
-            os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-            os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
+            dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+            dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
             dic = eMENU.print_log(dic, "GTP-U: Deactivation due to DetachAccept received")
         
         dic = eMENU.print_log(dic, "NAS: DetachAccept received")
@@ -1938,8 +1953,8 @@ def ProcessInitialContextSetupRequest(IEs, dic):
 
             #uses the last pdn as the gtp-u
             if len(dic['SGW-GTP-ADDRESS']) > 0:
-                os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-                os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))        
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))        
                 
 
         
@@ -2028,9 +2043,9 @@ def ProcessERABSetupRequest(IEs, dic):
                     #dic['NAS'] = None
             
             if len(dic['SGW-GTP-ADDRESS']) > 0:
-                os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-                os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))            
-                
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))            
+    
     val = []
     
     IEs = []
@@ -2099,8 +2114,8 @@ def ProcessERABReleaseCommand(IEs, dic):
                     dic['SGW-TEID'].pop(position)
             
             if len(dic['SGW-GTP-ADDRESS']) > 0:
-                os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-                os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+                dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],dic['GTP-U'] + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
      
         elif i['id'] == 26: #nas        
             nas_pdu = i['value'][1]
@@ -2156,8 +2171,8 @@ def ProcessUEContextReleaseCommand(IEs, dic):
     
     if dic['GTP-U'] != b'\x02' and len(dic['SGW-GTP-ADDRESS']) > 0:
         #disable but do not change variable value (i.e. to activate in case service request is initiated)
-        os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-        os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
+        dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+        dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
         dic = eMENU.print_log(dic, "GTP-U: Deactivation due to ContextRelease")
     
     #if uecontext release was triggered by csfb
@@ -2241,8 +2256,8 @@ def UEContextReleaseRequest(dic):
     
     if dic['GTP-U'] != b'\x02' and len(dic['SGW-GTP-ADDRESS']) > 0:
         
-        os.write(dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
-        os.write(dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
+        dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-ENCAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + dic['SGW-TEID'][-1])
+        dic = write_gtp_wrap(dic, dic['PIPE-OUT-GTPU-DECAPSULATE'],b'\x02' + dic['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([dic['RAB-ID'][-1]]))
         dic = eMENU.print_log(dic, "GTP-U: Deactivation due to ContextRelease")
         
     return val
@@ -2477,12 +2492,13 @@ def encapsulate_gtp_u(args):
     gtp_kernel = args[3]
 
     socket_list = []
-    socket_list.append(tap_fd)
+    # if gtp_kernel == False:
+        # socket_list.append(tap_fd)
     socket_list.append(pipe_in_gtpu_encapsulate)
     active = False
     
     while True:
-        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [])
+        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [], 1000)
         for sock in read_sockets:    
             if sock == tap_fd:
                 try:
@@ -2518,7 +2534,7 @@ def decapsulate_gtp_u(args):
     active = False
     
     while True:
-        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [])
+        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [], 1000)
         for sock in read_sockets:    
             if sock == s_gtpu:    
 
@@ -2716,14 +2732,20 @@ def main():
     if options.mme_2_ip is not None:
         client2.connect(server_address_2)
 
-    s_gtpu = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    if options.gtp_kernel == False: 
-        s_gtpu.bind((options.eNB_ip, 2152))
-    #for gtp-u
-    dev = open_tun(1)
-    #for s1ap
-    dev_nbiot = open_tun(2)
-    session_dict['NBIOT-TUN'] = dev_nbiot
+    # try:
+    #     # s_gtpu = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #     # if options.gtp_kernel == False: 
+    #     #     s_gtpu.bind((options.eNB_ip, 2152))
+    #     # #for gtp-u
+    #     # dev = open_tun(1)
+    #     #for s1ap
+    #     dev_nbiot = open_tun(2)
+    # except Exception as ee:
+    #     print(ee)
+    #     exit(1)
+    
+    # session_dict['NBIOT-TUN'] = dev_nbiot
+
     
     pipe_in_gtpu_encapsulate, pipe_out_gtpu_encapsulate = os.pipe()
     pipe_in_gtpu_decapsulate, pipe_out_gtpu_decapsulate = os.pipe()
@@ -2732,12 +2754,12 @@ def main():
     session_dict['PIPE-OUT-GTPU-DECAPSULATE'] = pipe_out_gtpu_decapsulate
     session_dict['GTP-U'] = b'\x02' # inactive
 
-    worker1 = Thread(target = encapsulate_gtp_u, args = ([s_gtpu, dev, pipe_in_gtpu_encapsulate, options.gtp_kernel],))
-    worker2 = Thread(target = decapsulate_gtp_u, args = ([s_gtpu, dev, pipe_in_gtpu_decapsulate, options.gtp_kernel],))
-    worker1.setDaemon(True)
-    worker2.setDaemon(True)
-    worker1.start()
-    worker2.start()
+    # worker1 = Thread(target = encapsulate_gtp_u, args = ([s_gtpu, dev, pipe_in_gtpu_encapsulate, options.gtp_kernel],))
+    # worker2 = Thread(target = decapsulate_gtp_u, args = ([s_gtpu, dev, pipe_in_gtpu_decapsulate, options.gtp_kernel],))
+    # worker1.setDaemon(True)
+    # worker2.setDaemon(True)
+    # worker1.start()
+    # worker2.start()
 
   
     eMENU.print_menu(session_dict['LOG'])
@@ -2745,13 +2767,13 @@ def main():
     session_dict['MME-IN-USE'] = 1
   
    
-    socket_list = [sys.stdin ,client, dev_nbiot]
+    socket_list = [sys.stdin ,client]
     if options.mme_2_ip is not None:
         socket_list.append(client2)
     
     while True:
         
-        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [])
+        read_sockets, write_sockets, error_sockets = select.select(socket_list, [], [], 1000)
         
         for sock in read_sockets:
             if sock == client:

@@ -76,6 +76,7 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 def print_menu(log):
+    return
 
     MENU_SIZE = len(menu_list) + 1 
     log = log[-MENU_SIZE+1:]
@@ -507,8 +508,8 @@ def ProcessMenu(PDU, client, session_dict, msg):
             if session_dict['GTP-U'] == b'\x02':
                 session_dict['GTP-U'] = b'\x01' 
                 if len(session_dict['SGW-GTP-ADDRESS']) > 0:
-                    os.write(session_dict['PIPE-OUT-GTPU-ENCAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + session_dict['SGW-TEID'][-1])
-                    os.write(session_dict['PIPE-OUT-GTPU-DECAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([session_dict['RAB-ID'][-1]]))
+                    session_dict = write_gtp_wrap(session_dict, session_dict['PIPE-OUT-GTPU-ENCAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + session_dict['SGW-TEID'][-1])
+                    session_dict = write_gtp_wrap(session_dict, session_dict['PIPE-OUT-GTPU-DECAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([session_dict['RAB-ID'][-1]]))
                 if session_dict['PDN-ADDRESS-IPV4'] is not None:
                     if session_dict['GTP-KERNEL'] == False:                  
                         subprocess.call("route add -net 0.0.0.0/1 gw " + session_dict['PDN-ADDRESS-IPV4'], shell=True)    
@@ -534,8 +535,8 @@ def ProcessMenu(PDU, client, session_dict, msg):
         if session_dict['GTP-U'] == b'\x01': 
             session_dict['GTP-U'] = b'\x02' 
             if len(session_dict['SGW-GTP-ADDRESS']) > 0:
-                os.write(session_dict['PIPE-OUT-GTPU-ENCAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + session_dict['SGW-TEID'][-1])
-                os.write(session_dict['PIPE-OUT-GTPU-DECAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([session_dict['RAB-ID'][-1]]))
+                session_dict = write_gtp_wrap(session_dict, session_dict['PIPE-OUT-GTPU-ENCAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + session_dict['SGW-TEID'][-1])
+                session_dict = write_gtp_wrap(session_dict, session_dict['PIPE-OUT-GTPU-DECAPSULATE'],session_dict['GTP-U'] + session_dict['SGW-GTP-ADDRESS'][-1] + b'\x00\x00\x00' + bytes([session_dict['RAB-ID'][-1]]))
             if session_dict['PDN-ADDRESS-IPV4'] is not None: 
                 if session_dict['GTP-KERNEL'] == False:     
                     subprocess.call("route del -net 0.0.0.0/1 gw " + session_dict['PDN-ADDRESS-IPV4'], shell=True)    
@@ -619,6 +620,9 @@ def print_log(session_dict, log_message):
         
     session_dict['LOG'] = session_dict['LOG'][-LOG_SIZE:]
     print_menu(session_dict['LOG'])
+    pf = sys._getframe(1) # pf.f_code.co_filename,
+
+    print( f"{pf.f_code.co_name}:{pf.f_lineno} # ", log_message)
     
     return session_dict    
 
