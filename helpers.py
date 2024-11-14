@@ -57,8 +57,7 @@ def helper_print_pco(data):
             elif i["ID"]._val in [16]:
                 v = int.from_bytes(val, "big")  # ok : be -> int
             elif i["ID"]._val in [int(TS24008_IE.PCOMS.IPCP)]:
-                v = "\n\t"+"\n\t".join(f"{c["Type"]} {".".join(
-                    f"{c}" for c in c["Data"].get_val())}" for c in i["Cont"]["Data"])
+                v = "\n\t"+"\n\t".join(f"{c['Type']} {'.'.join(f'{c}' for c in c['Data'].get_val())}" for c in i["Cont"]["Data"])
 
             if v:
                 print(i.count("ID"), i["ID"], v)  # , i.__dict__)
@@ -99,7 +98,7 @@ def do_tun_ss(dic):
         return dic
 
     locaddr = '.'.join(
-        f'{c}' for c in dic['ENB-GTP-ADDRESS-INT'].to_bytes(4, 'big'))
+        f'{c}' for c in dic['ENB-GTP-ADDRESS-INT2'].to_bytes(4, 'big'))
     cliaddr = dic['PDN-ADDRESS-IPV4']
     gtpua = '.'.join(f'{c}' for c in dic['SGW-GTP-ADDRESS'][-1])
     lteid = int.from_bytes(dic['SGW-TEID'][-1], "big")  # ok : be -> int
@@ -114,7 +113,8 @@ def do_tun_ss(dic):
 
     # proxy
     # y = f"tun_dev/server -e {locaddr} -g 172.22.0.113 {_cidr_expand(cliaddr+"/24")} -t {lteid} -d"  # -n bernd
-    y = f"tun_dev/server -e {locaddr} -g 172.22.0.6 {_cidr_expand(cliaddr+"/24")} -t {lteid} -d"  # -n bernd
+    y = f"gtpu-range-extender/server -e {locaddr} -g 172.25.54.120 {_cidr_expand(cliaddr+'/24')} -t {lteid} -d"  # -n bernd
+
     print(y)
 
     p = subprocess.Popen(shlex.split(y)

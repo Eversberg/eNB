@@ -2726,6 +2726,7 @@ def main():
     else:
         session_dict['ENB-GTP-ADDRESS-INT'] = ip2int(options.eNB_ip)
     session_dict['ENB-GTP-ADDRESS'] = socket.inet_aton(options.eNB_ip)
+    session_dict['ENB-GTP-ADDRESS-INT2'] = ip2int(options.eNB_ip)
 
 
     client.connect(server_address)
