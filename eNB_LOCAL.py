@@ -153,7 +153,8 @@ def session_dict_initialization(session_dict):
         session_dict['ENB-TAC2'] = b'\x00\x03'
     session_dict['ENB-TAC'] = session_dict['ENB-TAC1']
     session_dict['ENB-TAC-NBIOT'] = b'\x00\x02'     
-    session_dict['ENB-ID'] = 1
+    if session_dict['ENB-ID'] is None:
+        session_dict['ENB-ID'] = 1
     session_dict['ENB-CELLID'] = 1000000
     
     session_dict['NAS-KEY-EEA1'] = return_key(session_dict['KASME'],1,'NAS-ENC')
@@ -2589,6 +2590,7 @@ def main():
     parser.add_option("-o", "--operator", dest="plmn", help="Operator MCC+MNC")
     parser.add_option("--tac1", dest="tac1", help="1st tracking area code")
     parser.add_option("--tac2", dest="tac2", help="2nd tracking area code")
+    parser.add_option("--enbid", dest="enb_id", help="eNB ID")
     parser.add_option("-Z", "--gtp-kernel", action="store_true", dest="gtp_kernel", help="Use GTP Kernel. Needs libgtpnl", default=False)
     parser.add_option("-S", "--maxseg", dest="maxseg", help="SCTP MAX_SEG (>463 bytes)")
     parser.add_option("--ue-radio-capability", dest="ueradiocapability", help="UERadioCapability in hex string")
@@ -2655,6 +2657,11 @@ def main():
         session_dict['ENB-TAC2'] = int(options.tac2).to_bytes(2, byteorder='big')
     else:
         session_dict['ENB-TAC2'] = None
+
+    if options.enb_id is not None:
+        session_dict['ENB-ID'] = int(options.enb_id)
+    else:
+        session_dict['ENB-ID'] = None
 
     if options.plmn is not None:
         session_dict['PLMN'] = options.plmn
